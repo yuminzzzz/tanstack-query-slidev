@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@oxc-parser/binding-linux-x64-gnu':
+        specifier: ^0.119.0
+        version: 0.119.0
       '@slidev/cli':
         specifier: ^52.14.1
         version: 52.14.1(@nuxt/kit@3.21.2)(@types/markdown-it@14.1.2)(@types/node@22.19.15)(@vue/compiler-sfc@3.5.30)(markdown-it@14.1.1)(postcss@8.5.8)
@@ -506,6 +509,12 @@ packages:
 
   '@oxc-parser/binding-linux-x64-gnu@0.115.0':
     resolution: {integrity: sha512-9iVX789DoC3SaOOG+X6NcF/tVChgLp2vcHffzOC2/Z1JTPlz6bMG2ogvcW6/9s0BG2qvhNQImd+gbWYeQbOwVw==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [linux]
+
+  '@oxc-parser/binding-linux-x64-gnu@0.119.0':
+    resolution: {integrity: sha512-m+DE7NhJIEGp4efSJnNfRf3swT25rbZ1FTIihV+pOLTI+k5yNguxvqT338mNu61OVSx0BfpV8QlO2nz43GR/Zg==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [linux]
@@ -3286,6 +3295,8 @@ snapshots:
 
   '@oxc-parser/binding-linux-x64-gnu@0.115.0':
     optional: true
+
+  '@oxc-parser/binding-linux-x64-gnu@0.119.0': {}
 
   '@oxc-parser/binding-linux-x64-musl@0.115.0':
     optional: true
