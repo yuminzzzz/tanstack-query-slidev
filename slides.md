@@ -5,12 +5,9 @@ theme: seriph
 # like them? see https://unsplash.com/collections/94734566/slidev
 background: https://cover.sli.dev
 # some information about your slides (markdown enabled)
-title: Welcome to Slidev
+title: Thunk to TanStack Query
 info: |
-  ## Slidev Starter Template
-  Presentation slides for developers.
-
-  Learn more at [Sli.dev](https://sli.dev)
+  ## 以 202603 popFunny 專案為例，說明從 thunk 轉為 TanStack Query 的動機與改善點。
 # apply UnoCSS classes to the current slide
 class: text-center
 # https://sli.dev/features/drawing
@@ -24,614 +21,352 @@ comark: true
 duration: 35min
 ---
 
-# Welcome to Slidev
+<!-- markdownlint-disable MD003 MD012 MD022 MD025 -->
 
-Presentation slides for developers
+## 從 Thunk 轉成 TanStack Query
 
-<div @click="$slidev.nav.next" class="mt-12 py-1" hover:bg="white op-10">
-  Press Space for next page <carbon:arrow-right />
-</div>
-
-<div class="abs-br m-6 text-xl">
-  <button @click="$slidev.nav.openInEditor()" title="Open in Editor" class="slidev-icon-btn">
-    <carbon:edit />
-  </button>
-  <a href="https://github.com/slidevjs/slidev" target="_blank" class="slidev-icon-btn">
-    <carbon:logo-github />
-  </a>
-</div>
-
-<!--
-The last comment block of each slide will be treated as slide notes. It will be visible and editable in Presenter Mode along with the slide. [Read more in the docs](https://sli.dev/guide/syntax.html#notes)
--->
-
----
-transition: fade-out
----
-
-# What is Slidev?
-
-Slidev is a slides maker and presenter designed for developers, consist of the following features
-
-- 📝 **Text-based** - focus on the content with Markdown, and then style them later
-- 🎨 **Themable** - themes can be shared and re-used as npm packages
-- 🧑‍💻 **Developer Friendly** - code highlighting, live coding with autocompletion
-- 🤹 **Interactive** - embed Vue components to enhance your expressions
-- 🎥 **Recording** - built-in recording and camera view
-- 📤 **Portable** - export to PDF, PPTX, PNGs, or even a hostable SPA
-- 🛠 **Hackable** - virtually anything that's possible on a webpage is possible in Slidev
-<br>
-<br>
-
-Read more about [Why Slidev?](https://sli.dev/guide/why)
-
-<!--
-You can have `style` tag in markdown to override the style for the current page.
-Learn more: https://sli.dev/features/slide-scope-style
--->
-
-<style>
-h1 {
-  background-color: #2B90B6;
-  background-image: linear-gradient(45deg, #4EC5D4 10%, #146b8c 20%);
-  background-size: 100%;
-  -webkit-background-clip: text;
-  -moz-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  -moz-text-fill-color: transparent;
-}
-</style>
-
-<!--
-Here is another comment.
--->
-
----
-transition: slide-up
-level: 2
----
-
-# Navigation
-
-Hover on the bottom-left corner to see the navigation's controls panel, [learn more](https://sli.dev/guide/ui#navigation-bar)
-
-## Keyboard Shortcuts
-
-|                                                     |                             |
-| --------------------------------------------------- | --------------------------- |
-| <kbd>right</kbd> / <kbd>space</kbd>                 | next animation or slide     |
-| <kbd>left</kbd>  / <kbd>shift</kbd><kbd>space</kbd> | previous animation or slide |
-| <kbd>up</kbd>                                       | previous slide              |
-| <kbd>down</kbd>                                     | next slide                  |
-
-<!-- https://sli.dev/guide/animations.html#click-animation -->
-<img
-  v-click
-  class="absolute -bottom-9 -left-7 w-80 opacity-50"
-  src="https://sli.dev/assets/arrow-bottom-left.svg"
-  alt=""
-/>
-<p v-after class="absolute bottom-23 left-45 opacity-30 transform -rotate-10">Here!</p>
+以 `events/202603/popFunny` 為例
 
 ---
 layout: two-cols
-layoutClass: gap-16
 ---
 
-# Table of contents
+# 原本的開發痛點
 
-You can use the `Toc` component to generate a table of contents for your slides:
+- 一個分頁通常就要配一個 `slice`
+- 除了 `service.js` 寫 thunk，還要再補 `slice.js` 存狀態
+- CRUD 結果常常和 tab UI state 放在同一個 slice
+- 狀態職責容易越長越混亂
 
-```html
-<Toc minDepth="1" maxDepth="1" />
+::right::
+# 直接感受到的成本
+
+- 新增一個資料流程，常常不是只加 API
+- 還要決定 state 掛哪個 slice
+- 還要決定 reducer 要 export 哪些更新 function
+- 或者重新 import 某個 tab 的 thunk 再呼叫一次
+- UI 層會慢慢知道太多資料載入細節
+
+---
+layout: two-cols
+---
+
+# 舊做法：tab 切換會直接綁 thunk
+
+```js
+export const handlePanelInfo =
+  (param = {}) =>
+  async (dispatch) => {
+    const { tabId } = param || {};
+
+    switch (tabId) {
+      case TAB_ID.TAB1:
+        await dispatch(handleTab1SubTab2Info());
+        break;
+      case TAB_ID.TAB2:
+        await dispatch(handleTab2Info());
+        break;
+      case TAB_ID.TAB3:
+        await dispatch(handleTab3Info());
+        break;
+      default:
+        dispatch(setTabId({ tabId }));
+    }
+  };
 ```
-
-The title will be inferred from your slide content, or you can override it with `title` and `level` in your frontmatter.
 
 ::right::
 
-<Toc text-sm minDepth="1" maxDepth="2" />
+- UI 切 tab，背後其實要知道「該 dispatch 哪支 thunk」
+- 預設頁如果不是 tab 本身，通常還要多包一層 re-export
+- 分頁 routing、資料抓取、UI state 綁得很緊
 
 ---
-layout: image-right
-image: https://cover.sli.dev
+
+# 為什麼改成 TanStack Query
+
+## 關鍵想法
+
+- 組裝資料時，不一定要先進 Redux store
+- 如果只是為了取 state 才把 API 包成 thunk，成本其實很高
+- Query hook 可以在組 option 時直接拿需要的 context
+- 真正需要共用的是「資料快取」，不是每次都新增一個 slice
+
+## 改完之後
+
+- API 不需要為了 `getState()` 而被迫包成 thunk
+- UI 不需要知道每個 tab 對應哪支 thunk
+- CRUD 後的資料更新可以走 query cache
+
+---
+layout: two-cols
+
 ---
 
-# Code
+# 新做法：由 useDynamicTabsQuery 集中決定要抓什麼
 
-Use code snippets and get the highlighting directly, and even types hover!
+```js
+const getFinalTabId = (tabId) => {
+  const TAB_ROUTE_MAP = {
+    1: { subRoute: "1/2" },
+    2: { subRoute: "" },
+    3: { subRoute: "" },
+    "1/1": { subRoute: "" },
+    "1/2": { subRoute: "" },
+  };
+  const current = TAB_ROUTE_MAP[tabId];
+  if (!current || !current.subRoute) {
+    return tabId;
+  }
 
-```ts [filename-example.ts] {all|4|6|6-7|9|all} twoslash
-// TwoSlash enables TypeScript hover information
-// and errors in markdown code blocks
-// More at https://shiki.style/packages/twoslash
-import { computed, ref } from 'vue'
+  return getFinalTabId(current.subRoute);
+};
 
-const count = ref(0)
-const doubled = computed(() => count.value * 2)
-
-doubled.value = 2
+const loadTabQueryOption = (tabId) =>
+  import(`@/events/202603/popFunny/hooks/queries/panels/${tabId}`);
 ```
 
-<arrow v-click="[4, 5]" x1="350" y1="310" x2="195" y2="342" color="#953" width="2" arrowSize="1" />
+::right::
 
-<!-- This allow you to embed external code blocks -->
-<<< @/snippets/external.ts#snippet
-
-<!-- Footer -->
-
-[Learn more](https://sli.dev/features/line-highlighting)
-
-<!-- Inline style -->
-<style>
-.footnotes-sep {
-  @apply mt-5 opacity-10;
-}
-.footnotes {
-  @apply text-sm opacity-75;
-}
-.footnote-backref {
-  display: none;
-}
-</style>
-
-<!--
-Notes can also sync with clicks
-
-[click] This will be highlighted after the first click
-
-[click] Highlighted with `count = ref(0)`
-
-[click:3] Last click (skip two clicks)
--->
+- `TAB_ROUTE_MAP` 決定某個 tab 的預設落點
+- `getFinalTabId()` 統一解析最後要載入的分頁
+- `loadTabQueryOption()` 動態載入對應 tab 的 query option
 
 ---
-level: 2
+layout: center
 ---
 
-# Shiki Magic Move
+# UI 層變簡單了
 
-Powered by [shiki-magic-move](https://shiki-magic-move.netlify.app/), Slidev supports animations across multiple code snippets.
+```js
+const handleTabChange = (id) => {
+  if (+id === +tabId) return;
+  fetchTab(id);
+};
+```
 
-Add multiple code blocks and wrap them with <code>````md magic-move</code> (four backticks) to enable the magic move. For example:
+來源：`events/202603/popFunny/Page.jsx`
 
-````md magic-move {lines: true}
-```ts {*|2|*}
-// step 1
-const author = reactive({
-  name: 'John Doe',
-  books: [
-    'Vue 2 - Advanced Guide',
-    'Vue 3 - Basic Guide',
-    'Vue 4 - The Mystery'
-  ]
+```js
+const handleNavChange = async (id) => {
+  const tabId = id === 1 ? "1/1" : "1/2";
+  await fetchTab(tabId);
+};
+```
+
+來源：`events/202603/popFunny/Panel/Tab1/index.jsx`
+
+- `onChange` 不用再把所有子 tab thunk 都 import 進來
+- UI 只做一件事：告訴系統「我要哪個 tabId」
+- 最後該抓哪個 query option，交給 `useDynamicTabsQuery`
+
+---
+
+# CRUD 完成後，更新資料也更直覺
+
+```js
+queryClient.setQueryData(PANEL_QUERY_KEY, (previousData) => ({
+  ...previousData,
+  userDrawCount,
+}));
+```
+
+- 舊做法常見兩條路
+- export reducer function，手動改 slice state
+- 或 import 原本 tab 的 thunk，重新 dispatch 一次重抓資料
+
+## 改成 Query 後
+
+- 可以直接 `queryClient.setQueryData(...)`
+- 或者用 `invalidateQueries` 讓資料重新抓取
+- 更新資料的責任回到 cache，而不是散落在 reducer / thunk 之間
+
+---
+layout: two-cols
+--- 
+
+# Hooks Structure
+
+```bash
+hooks
+├─ queries
+│  ├─ donate
+│  │  └─ index.js
+│  ├─ draw
+│  │  └─ index.js
+│  ├─ drawLog
+│  │  └─ index.js
+│  ├─ panels
+│  │  ├─ [id].js
+│  │  └─ defaultTab
+│  │     └─ index.js
+│  └─ useDynamicTabsQuery.js
+├─ useCachedQueryData.js
+└─ useShowPageLoading.js
+```
+
+::right::
+
+- queries 存放所有 api
+- panels 存放各 tab 的 queryOption
+- useDynamicTabsQuery 作為統一對外呼叫的窗口，接收 tabId 並動態呼叫對應的 api
+- useCachedQueryData 取快取資料，對比現在用的 usePanel
+- useShowPageLoading 偵測目前正在呼叫的 query or mutation，來決定是否顯示 loading
+
+---
+
+# queryOption 架構
+
+## 主要對外 export 的 query option
+
+###### (需要 querykey, queryFn, onSuccess, onError 4個參數)
+
+```js
+export const getQueryOption = (context) => ({
+  queryKey: QUERY_KEY,
+  queryFn: getQueryFunction(context),
+  onSuccess,
+  onError,
 })
 ```
 
-```ts {*|1-2|3-4|3-4,8}
-// step 2
-export default {
-  data() {
-    return {
-      author: {
-        name: 'John Doe',
-        books: [
-          'Vue 2 - Advanced Guide',
-          'Vue 3 - Basic Guide',
-          'Vue 4 - The Mystery'
-        ]
-      }
-    }
+---
+
+# queryOption 架構
+
+## 主要呼叫 api 的 function
+###### (資料轉換在這層處理 ex: composeTask)
+
+```js
+const getQueryFunction = (context) => async () => {
+  const { configData, anchorPfid } = context
+  const { id: actId } = configData
+  const response = await fetchTab2Info({ actId, anchorPfid })
+  const { countDown, groupId, anchorTasks, guestTasks, guestDrawCount } = response.data
+  const { anchorTaskConfig, userTaskConfig } = configData.tab2Config
+
+  return {
+    groupId,
+    countDown,
+    userDrawCount: guestDrawCount,
+    anchorTasks: composeTask(anchorTaskConfig, anchorTasks),
+    userTasks: composeTask(userTaskConfig, guestTasks),
   }
 }
 ```
 
-```ts
-// step 3
-export default {
-  data: () => ({
-    author: {
-      name: 'John Doe',
-      books: [
-        'Vue 2 - Advanced Guide',
-        'Vue 3 - Basic Guide',
-        'Vue 4 - The Mystery'
-      ]
-    }
-  })
-}
-```
-
-Non-code blocks are ignored.
-
-```vue
-<!-- step 4 -->
-<script setup>
-const author = {
-  name: 'John Doe',
-  books: [
-    'Vue 2 - Advanced Guide',
-    'Vue 3 - Basic Guide',
-    'Vue 4 - The Mystery'
-  ]
-}
-</script>
-```
-````
-
 ---
-
-# Components
-
-<div grid="~ cols-2 gap-4">
-<div>
-
-You can use Vue components directly inside your slides.
-
-We have provided a few built-in components like `<Tweet/>` and `<Youtube/>` that you can use directly. And adding your custom components is also super easy.
-
-```html
-<Counter :count="10" />
-```
-
-<!-- ./components/Counter.vue -->
-<Counter :count="10" m="t-4" />
-
-Check out [the guides](https://sli.dev/builtin/components.html) for more.
-
-</div>
-<div>
-
-```html
-<Tweet id="1390115482657726468" />
-```
-
-<Tweet id="1390115482657726468" scale="0.65" />
-
-</div>
-</div>
-
-<!--
-Presenter note with **bold**, *italic*, and ~~striked~~ text.
-
-Also, HTML elements are valid:
-<div class="flex w-full">
-  <span style="flex-grow: 1;">Left content</span>
-  <span>Right content</span>
-</div>
--->
-
+layout: two-cols
 ---
-class: px-20
----
+## 成功處理
 
-# Themes
+```js
+const onSuccess = (data, { dispatch, queryClient }) => {
+  const { logs, drawType, userDrawCount } = data
 
-Slidev comes with powerful theming support. Themes can provide styles, layouts, components, or even configurations for tools. Switching between themes by just **one edit** in your frontmatter:
-
-<div grid="~ cols-2 gap-2" m="t-2">
-
-```yaml
----
-theme: default
----
-```
-
-```yaml
----
-theme: seriph
----
-```
-
-<img border="rounded" src="https://github.com/slidevjs/themes/blob/main/screenshots/theme-default/01.png?raw=true" alt="">
-
-<img border="rounded" src="https://github.com/slidevjs/themes/blob/main/screenshots/theme-seriph/01.png?raw=true" alt="">
-
-</div>
-
-Read more about [How to use a theme](https://sli.dev/guide/theme-addon#use-theme) and
-check out the [Awesome Themes Gallery](https://sli.dev/resources/theme-gallery).
-
----
-
-# Clicks Animations
-
-You can add `v-click` to elements to add a click animation.
-
-<div v-click>
-
-This shows up when you click the slide:
-
-```html
-<div v-click>This shows up when you click the slide.</div>
-```
-
-</div>
-
-<br>
-
-<v-click>
-
-The <span v-mark.red="3"><code>v-mark</code> directive</span>
-also allows you to add
-<span v-mark.circle.orange="4">inline marks</span>
-, powered by [Rough Notation](https://roughnotation.com/):
-
-```html
-<span v-mark.underline.orange>inline markers</span>
-```
-
-</v-click>
-
-<div mt-20 v-click>
-
-[Learn more](https://sli.dev/guide/animations#click-animation)
-
-</div>
-
----
-
-# Motions
-
-Motion animations are powered by [@vueuse/motion](https://motion.vueuse.org/), triggered by `v-motion` directive.
-
-```html
-<div
-  v-motion
-  :initial="{ x: -80 }"
-  :enter="{ x: 0 }"
-  :click-3="{ x: 80 }"
-  :leave="{ x: 1000 }"
->
-  Slidev
-</div>
-```
-
-<div class="w-60 relative">
-  <div class="relative w-40 h-40">
-    <img
-      v-motion
-      :initial="{ x: 800, y: -100, scale: 1.5, rotate: -50 }"
-      :enter="final"
-      class="absolute inset-0"
-      src="https://sli.dev/logo-square.png"
-      alt=""
-    />
-    <img
-      v-motion
-      :initial="{ y: 500, x: -100, scale: 2 }"
-      :enter="final"
-      class="absolute inset-0"
-      src="https://sli.dev/logo-circle.png"
-      alt=""
-    />
-    <img
-      v-motion
-      :initial="{ x: 600, y: 400, scale: 2, rotate: 100 }"
-      :enter="final"
-      class="absolute inset-0"
-      src="https://sli.dev/logo-triangle.png"
-      alt=""
-    />
-  </div>
-
-  <div
-    class="text-5xl absolute top-14 left-40 text-[#2B90B6] -z-1"
-    v-motion
-    :initial="{ x: -80, opacity: 0}"
-    :enter="{ x: 0, opacity: 1, transition: { delay: 2000, duration: 1000 } }">
-    Slidev
-  </div>
-</div>
-
-<!-- vue script setup scripts can be directly used in markdown, and will only affects current page -->
-<script setup lang="ts">
-const final = {
-  x: 0,
-  y: 0,
-  rotate: 0,
-  scale: 1,
-  transition: {
-    type: 'spring',
-    damping: 10,
-    stiffness: 20,
-    mass: 2
+  const updateDrawCount = () => {
+    queryClient.setQueryData(PANEL_QUERY_KEY, (previousData) => ({
+      ...previousData,
+      userDrawCount,
+    }))
   }
+
+  updateDrawCount()
+
+  if (drawType === DRAW_TYPE.ONE) {
+    // 單抽等轉盤動效結束後再顯示結果
+    return
+  }
+
+  dispatch(openDrawResultModal({ logs }))
 }
-</script>
+```
 
-<div
-  v-motion
-  :initial="{ x:35, y: 30, opacity: 0}"
-  :enter="{ y: 0, opacity: 1, transition: { delay: 3500 } }">
+::right::
 
-[Learn more](https://sli.dev/guide/animations.html#motion)
+## 失敗處理
 
-</div>
+```js
+const onError = (error, { dispatch }) => {
+  if (error.toast) {
+    dispatch(openToast(error.toast))
+    return
+  }
+
+  dispatch(openToast({ title: error?.retMsg || '連線異常', type: 'danger' }))
+}
+```
 
 ---
 
-# $\LaTeX$
-
-$\LaTeX$ is supported out-of-box. Powered by [$\KaTeX$](https://katex.org/).
-
-<div h-3 />
-
-Inline $\sqrt{3x-1}+(1+x)^2$
-
-Block
-$$ {1|3|all}
-\begin{aligned}
-\nabla \cdot \vec{E} &= \frac{\rho}{\varepsilon_0} \\
-\nabla \cdot \vec{B} &= 0 \\
-\nabla \times \vec{E} &= -\frac{\partial\vec{B}}{\partial t} \\
-\nabla \times \vec{B} &= \mu_0\vec{J} + \mu_0\varepsilon_0\frac{\partial\vec{E}}{\partial t}
-\end{aligned}
-$$
-
-[Learn more](https://sli.dev/features/latex)
-
----
-
-# Diagrams
-
-You can create diagrams / graphs from textual descriptions, directly in your Markdown.
-
-<div class="grid grid-cols-4 gap-5 pt-4 -mb-6">
-
-```mermaid {scale: 0.5, alt: 'A simple sequence diagram'}
-sequenceDiagram
-    Alice->John: Hello John, how are you?
-    Note over Alice,John: A typical interaction
-```
-
-```mermaid {theme: 'neutral', scale: 0.8}
-graph TD
-B[Text] --> C{Decision}
-C -->|One| D[Result 1]
-C -->|Two| E[Result 2]
-```
+# 架構上的實際改善
 
 ```mermaid
-mindmap
-  root((mindmap))
-    Origins
-      Long history
-      ::icon(fa fa-book)
-      Popularisation
-        British popular psychology author Tony Buzan
-    Research
-      On effectiveness<br/>and features
-      On Automatic creation
-        Uses
-            Creative techniques
-            Strategic planning
-            Argument mapping
-    Tools
-      Pen and paper
-      Mermaid
+flowchart LR
+  UserAction[UserAction]
+  UiLayer[UiLayer]
+  DynamicTabsQuery[useDynamicTabsQuery]
+  QueryOption[tabQueryOption]
+  QueryCache[QueryCache]
+  View[ViewComponents]
+
+  UserAction --> UiLayer
+  UiLayer -->|tabId| DynamicTabsQuery
+  DynamicTabsQuery -->|resolve finalTabId| QueryOption
+  QueryOption --> QueryCache
+  QueryCache --> View
 ```
 
-```plantuml {scale: 0.7}
-@startuml
-
-package "Some Group" {
-  HTTP - [First Component]
-  [Another Component]
-}
-
-node "Other Groups" {
-  FTP - [Second Component]
-  [First Component] --> FTP
-}
-
-cloud {
-  [Example 1]
-}
-
-database "MySql" {
-  folder "This is my folder" {
-    [Folder 3]
-  }
-  frame "Foo" {
-    [Frame 4]
-  }
-}
-
-[Another Component] --> [Example 1]
-[Example 1] --> [Folder 3]
-[Folder 3] --> [Frame 4]
-
-@enduml
-```
-
-</div>
-
-Learn more: [Mermaid Diagrams](https://sli.dev/features/mermaid) and [PlantUML Diagrams](https://sli.dev/features/plantuml)
-
----
-foo: bar
-dragPos:
-  square: 691,32,167,_,-16
----
-
-# Draggable Elements
-
-Double-click on the draggable elements to edit their positions.
-
-<br>
-
-###### Directive Usage
-
-```md
-<img v-drag="'square'" src="https://sli.dev/logo.png">
-```
-
-<br>
-
-###### Component Usage
-
-```md
-<v-drag text-3xl>
-  <div class="i-carbon:arrow-up" />
-  Use the `v-drag` component to have a draggable container!
-</v-drag>
-```
-
-<v-drag pos="663,206,261,_,-15">
-  <div text-center text-3xl border border-main rounded>
-    Double-click me!
-  </div>
-</v-drag>
-
-<img v-drag="'square'" src="https://sli.dev/logo.png">
-
-###### Draggable Arrow
-
-```md
-<v-drag-arrow two-way />
-```
-
-<v-drag-arrow pos="67,452,253,46" two-way op70 />
-
----
-src: ./pages/imported-slides.md
-hide: false
----
+- 載入邏輯集中在一個入口，不再散在各 tab 的 thunk import
+- tab default route 用 `TAB_ROUTE_MAP` 明確定義，不用再靠多包一層 index re-export
+- 查詢資料以 cache 為核心，UI 改成讀結果，不必每頁維護一份 slice data
+- tab 資料、CRUD 結果、重抓策略的責任邊界更清楚
 
 ---
 
-# Monaco Editor
+# 這次遷移最有感的收穫
 
-Slidev provides built-in Monaco Editor support.
+## 少了什麼
 
-Add `{monaco}` to the code block to turn it into an editor:
+- 「為了抓資料而存在」的 thunk
+- 「為了存 API 結果而存在」的 slice
+- 每次使用 thunk 時需要呼叫 useDispatch
+- 少很多 UI 對資料載入實作細節的認知
 
-```ts {monaco}
-import { ref } from 'vue'
-import { emptyArray } from './external'
+## 改善了什麼
 
-const arr = ref(emptyArray(10))
-```
+- 降低 tab 與資料流的耦合
+- 降低 CRUD 更新資料時的心智負擔
+- 預設頁 routing 規則更直觀（定義在 TAB_ROUTE_MAP）
+- 未來新增 tab / subtab 時，擴充點更集中
 
-Use `{monaco-run}` to create an editor that can execute the code directly in the slide:
+---
 
-```ts {monaco-run}
-import { version } from 'vue'
-import { emptyArray, sayHello } from './external'
+# 不完全移除 Redux，先把職責切分
 
-sayHello()
-console.log(`vue ${version}`)
-console.log(emptyArray<number>(10).reduce(fib => [...fib, fib.at(-1)! + fib.at(-2)!], [1, 1]))
-```
+目前 `popFunny` 仍然保留一些 Redux / thunk 職責：
+
+- `config` 仍持有 `tabId`、`tab1SubTabId`、活動設定
+- `modal confirm` 仍是 thunk 型式
+- 某些 query `onSuccess` 還是會 dispatch UI state
+
+## server & client state 分離
+
+- 把「資料查詢與更新」從 slice/thunk 為主
+- 移到「query cache 為主」的思考方式
+
+---
+layout: center
+---
+
+# 結論
 
 ---
 layout: center
 class: text-center
 ---
 
-# Learn More
+# 檔案數差異
 
-[Documentation](https://sli.dev) · [GitHub](https://github.com/slidevjs/slidev) · [Showcases](https://sli.dev/resources/showcases)
+![檔案數差異](/file-count-diff.png){class="mx-auto max-h-100"}
 
-<PoweredBySlidev mt-10 />
