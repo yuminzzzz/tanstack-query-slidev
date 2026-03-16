@@ -49,6 +49,7 @@ layout: two-cols
 
 ---
 layout: two-cols
+
 ---
 
 # 舊做法：tab 切換會直接綁 thunk
@@ -183,7 +184,8 @@ queryClient.setQueryData(PANEL_QUERY_KEY, (previousData) => ({
 
 ---
 layout: two-cols
---- 
+
+---
 
 # Hooks Structure
 
@@ -214,6 +216,64 @@ hooks
 - useShowPageLoading 偵測目前正在呼叫的 query or mutation，來決定是否顯示 loading
 
 ---
+layout: two-cols
+
+---
+
+
+```js {1-15|2-8|14|16-18}
+const getFinalTabId = (tabId) => {
+  const TAB_ROUTE_MAP = {
+    1: { subRoute: "1/2" },
+    2: { subRoute: "" },
+    3: { subRoute: "" },
+    "1/1": { subRoute: "" },
+    "1/2": { subRoute: "" },
+  };
+  const current = TAB_ROUTE_MAP[tabId];
+  if (!current || !current.subRoute) {
+    return tabId;
+  }
+
+  return getFinalTabId(current.subRoute);
+};
+
+const loadTabQueryOption = (tabId) =>
+  import(`@/events/202603/popFunny/hooks/queries/panels/${tabId}`);
+```
+
+::right::
+
+```js {8|9|10}
+export const useDynamicTabsQuery = () => {
+  const dispatch = useDispatch()
+  const queryClient = useQueryClient()
+  const anchorPfid = useSelector(liveDataAnchorPfidSelector)
+  const { configData } = useSelector(actConfigSelector)
+
+  const queryFunction = async (tabId, params = {}) => {
+    const finalTabId = getFinalTabId(tabId)
+    const { getQueryOption } = await loadTabQueryOption(finalTabId)
+    const queryOption = getQueryOption({ configData, anchorPfid, params })
+    const { onSuccess, onError, ...restOption } = queryOption
+
+    try {
+      const data = await queryClient.fetchQuery(restOption)
+      onSuccess?.(data, { queryClient, dispatch })
+    } catch (error) {
+      onError?.(error, { queryClient })
+    }
+  }
+  const fetchTab = useCallback(queryFunction, [dispatch, queryClient, configData, anchorPfid])
+
+  return {
+    fetchTab,
+  }
+}
+```
+
+
+---
 
 # queryOption 架構
 
@@ -237,13 +297,13 @@ export const getQueryOption = (context) => ({
 ## 主要呼叫 api 的 function
 ###### (資料轉換在這層處理 ex: composeTask)
 
-```js
+```js {2|3-4|5|6-7|all}
 const getQueryFunction = (context) => async () => {
   const { configData, anchorPfid } = context
   const { id: actId } = configData
+  const { anchorTaskConfig, userTaskConfig } = configData.tab2Config
   const response = await fetchTab2Info({ actId, anchorPfid })
   const { countDown, groupId, anchorTasks, guestTasks, guestDrawCount } = response.data
-  const { anchorTaskConfig, userTaskConfig } = configData.tab2Config
 
   return {
     groupId,
@@ -257,6 +317,7 @@ const getQueryFunction = (context) => async () => {
 
 ---
 layout: two-cols
+
 ---
 ## 成功處理
 
@@ -355,18 +416,39 @@ flowchart LR
 - 把「資料查詢與更新」從 slice/thunk 為主
 - 移到「query cache 為主」的思考方式
 
+
 ---
 layout: center
+
 ---
 
 # 結論
 
 ---
-layout: center
-class: text-center
+layout: image-right
+image: /file-count-diff.png
+backgroundSize: 80%
 ---
 
 # 檔案數差異
+因為初次配置 tanstack query, 將共用程式碼抽出以及不算配置的話，可再少約 74 行左右，大約是 +671 vs -796
 
-![檔案數差異](/file-count-diff.png){class="mx-auto max-h-100"}
+這次重構總共修改 **1467 行程式碼**，其中：
+
+- ❌ **刪除：796 行**
+- ✅ **新增：671 行**
+
+**最終結果：**
+
+- 📉 整體程式碼量 **減少 125 行**
+- 📊 約 **8.5% 的程式碼精簡**
+
+**重構效益：**
+
+- 移除了大量 **Redux boilerplate**
+- 提升整體 **程式碼可讀性與維護性**
+
+---
+
+[Merge Request](https://gitlab.svc.langlive.tech/langlive/frontend/langlive-h5-webview-v2/-/merge_requests/11093)
 
